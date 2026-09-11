@@ -121,6 +121,22 @@ python -m pytest tests/test_add.py -q --ref cpu                 # 1010 passed
   手写 Triton add 比原生快 38%**，中小张量差距来自 Python host launch 链路
   （~35µs/次）——这是框架性能路线的独立参考数据，详见报告 §6
 
+## 后续优化路线与 stage-2 进展
+
+本修复是四阶段路线的 stage-1（correctness）。stage-2（host 链路减负）已完成
+定位与原型（`tests/stage2_*.py`，报告 §5.1）：
+
+| host enqueue 分解（4MB add） | µs/次 | 占比 |
+|---|---|---|
+| 原生 torch.add（C++ + aclnn） | 8.9 | 8% |
+| 裸 Triton launch | 33.4 | 29% |
+| flag_gems add（框架 Python 层） | 123.1 | **63% ← 靶位** |
+
+plan-cache 原型（缓存 prepare_args 的路径决策，仅重建 StridedBuffer）：
+**127.2 → 84.6 µs（-34%）**，输出 `torch.equal` 逐位一致；直调 overload 的
+收益上限 -52%。原型未合入 src（缓存失效策略需上游产品化决策）。
+stage-3（形状感知 fallback 阈值）与 stage-4（AOT 预编译）未动。
+
 ## 目录结构
 
 ```
@@ -138,7 +154,11 @@ python -m pytest tests/test_add.py -q --ref cpu                 # 1010 passed
 │   ├── probe_force_bptr.py      # 根因复现: 强制 bptr 触发崩溃
 │   ├── probe_isolate.py         # 根因隔离: bptr 下广播 vs 非广播
 │   ├── handwrite_bench.py       # Triton vs 原生性能实验 (路线参考)
-│   └── host_overhead.py         # host launch 开销分解 (路线参考)
+│   ├── host_overhead.py         # host launch 开销分解 (路线参考)
+│   ├── stage2_locate.py         # stage-2: host 开销三层分解 (定位)
+│   ├── stage2_profile.py        # stage-2: 框架层 cProfile 内部分解
+│   ├── stage2_proto.py          # stage-2: 直调 overload 收益上限
+│   └── stage2_plancache.py      # stage-2: plan-cache 原型 (-34%, 数值equal)
 └── docs/
     └── POINTWISE_5739_REPORT.md # 完整报告: 根因链、复现矩阵、性能数据、修复路线
 ```
