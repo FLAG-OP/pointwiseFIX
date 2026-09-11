@@ -148,6 +148,40 @@ fallback 阈值（利用现成 `use_gems(exclude=...)` 机制，打赢的区间�
 ④ 部署态 AOT 打包 npubin（对冷启动重要，对稳态性能帮助有限——triton 缓存
 本已按参数 hash 命中）。
 
+### 5.1 stage-2 推进（2026-09-11）：host 开销定位与 plan-cache 原型
+
+路线 ②（host 链路减负）已完成定位测量和原型验证：
+
+**三层分解**（`tests/stage2_locate.py`，4MB 同形 add，host enqueue 中位数）：
+
+| 层 | µs/次 | 占比 |
+|---|---|---|
+| 层1 原生 torch.add（C++ dispatch + aclnn） | 8.9 | 8% |
+| 层2 裸 Triton launch（Python JIT 链） | 33.4 | 29% |
+| 层3 flag_gems add（框架层叠加 +89.7） | 123.1 | **63%** |
+
+**框架层内部分解**（`tests/stage2_profile.py`，cProfile 2000 次）：生成 wrapper
+57%（其中 triton jit launch 链 37%、C launcher 本体仅 7%）、`prepare_args` 31%
+（check_tensor_attributes / type_promotion / broadcast_shapes / fast-path 判定 /
+StridedBuffer 包装 ×4 genexpr）、torch dispatch 12%。
+
+**plan-cache 原型**（`tests/stage2_plancache.py`）：`prepare_args` 的输出决策
+（ndim / fast-slow / 广播标记 / 分配 dtype）只取决于
+(形状组, dtype 组, device, stride 组, contig 组)，与张量身份无关——缓存决策
+plan、每次调用仅重建 StridedBuffer（引用当前张量，无别名风险）。实测：
+
+| 路径 | µs/次 | 数值 |
+|---|---|---|
+| 完整 torch.add 路径 | 127.2 | — |
+| plan-cache 原型 | **84.6（省 34%）** | torch.equal 逐位一致 |
+| 直调 overload（收益上限） | 59.7（省 52%） | — |
+
+**stage-2 结论**：纯 Python 层可收回 34-52% host 开销而零 kernel 改动；
+更激进的 C++ 化（把 wrapper 下沉为 torch extension）可到层 2 的 33µs 附近。
+原型未合入库（涉及 `prepare_args` 签名与缓存失效策略的产品化决策，
+建议上游评估）；stage-3（形状感知 fallback 阈值）与 stage-4（AOT 打包）
+未动。
+
 ## 6. 复现 / 验证命令速查
 
 ```bash
