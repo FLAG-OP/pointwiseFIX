@@ -1,0 +1,21 @@
+/usr/local/python3.11.15/lib/python3.11/site-packages/flag_gems/utils/libentry.py:411: RuntimeWarning: active Triton backend does not provide a replay benchmarker; falling back to event timing
+  resolved_benchmark = resolve_benchmarker(
+/usr/local/python3.11.15/lib/python3.11/site-packages/torch_npu/npu/__init__.py:539: UserWarning: You can set the device capability via the environment variable TORCH_NPU_DEVICE_CAPABILITY. The return value of get_device_capability is only for compatibility with PyTorch and does not represent the actual capability of the NPU device.
+  warnings.warn(f"You can set the device capability via the environment variable TORCH_NPU_DEVICE_CAPABILITY. {warning_str}")
+/usr/local/python3.11.15/lib/python3.11/site-packages/flag_gems/utils/device_info.py:58: UserWarning: [device_info] torch_device_fn.get_device_capability returned None for device_id=0, fallback to (0, 0).
+  warnings.warn(
+/usr/local/python3.11.15/lib/python3.11/site-packages/flag_gems/config.py:171: UserWarning: resolve_user_setting: no exclude ops found; returning empty list
+  warnings.warn(
+WARNING:root:Skipped registering operator: This is not allowed since there's already a kernel registered from python overriding ne_.Scalar's behavior for PrivateUse1 dispatch key and aten namespace.
+WARNING:root:Skipped registering operator: This is not allowed since there's already a kernel registered from python overriding ne_.Tensor's behavior for PrivateUse1 dispatch key and aten namespace.
+==================================================================
+A. 守卫检测成本 (修复新增, 形状比较): 0.321 us/次
+   (相对 pointwise host 路径 ~120us 完全可忽略)
+/usr/local/python3.11.15/lib/python3.11/site-packages/flag_gems/utils/pointwise_dynamic.py:1553: UserWarning: Cannot create tensor with interal format while allow_internel_format=False, tensor will be created with base format. (Triggered internally at ../torch_npu/csrc/aten/common/TensorFactories.cpp:340.)
+  torch.empty_like(tensors[0], dtype=dtype)
+
+B. 非广播同形 add:   121.1 us (走快路径, 守卫未触发, 与修复前同)
+C. 广播 add (128,1)+(1,128):   146.9 us (默认配置, 与修复前差异=A项)
+   广播 add (4096,1)+(1,4096):   391.2 us
+
+判读: 修复对默认配置是 no-op (A 项 ~0.1us 级); bptr 环境收益见 perf_guard.py
